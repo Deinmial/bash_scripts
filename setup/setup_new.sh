@@ -30,7 +30,9 @@ if [ "$(id -u)" != "0" ]; then
 fi
 
 # Путь к исходным файлам
-SRC_DIR="/home/GOVIRK.RU/d.homyakov/setup"
+# Автоматическое определение пути к скрипту
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC_DIR="$SCRIPT_DIR"
 
 # ---------------------------------------------------------
 # НАСТРОЙКИ XRDP
@@ -98,7 +100,7 @@ add_key_to_authorized() {
     if [ "$user" == "root" ]; then
         home_dir="/root"
     else
-        home_dir="/home/$user"
+        home_dir="/home/GOVIRK.RU/$user"
         if ! id -u "$user" >/dev/null 2>&1; then
             log "WARNING: Пользователь $user не найден, ключи пропущены"
             return
@@ -127,6 +129,21 @@ add_key_to_authorized() {
     fi
 }
 
+# Поиск последнего RPM пакета по шаблону имени
+find_latest_rpm() {
+    local pattern=$1
+    local dir=$2
+
+    # Ищем файлы, сортируем по версии (естественная сортировка) и берем последний
+    local latest=$(ls -1 "$dir"/$pattern 2>/dev/null | sort -V | tail -n 1)
+
+    if [ -z "$latest" ]; then
+        echo ""
+    else
+        echo "$latest"
+    fi
+}
+
 # ---------------------------------------------------------
 # 1. Подготовка SSH
 # ---------------------------------------------------------
@@ -143,6 +160,7 @@ add_key_to_authorized "root" "$SRC_DIR/2_ssh/id_rsa.pub"
 SSHD_CONFIG_OLD="/etc/openssh/sshd_config"
 if [ -f "$SSHD_CONFIG_OLD" ]; then
     apply_ssh_config "$SSHD_CONFIG_OLD"
+    systemctl enable --now sshd
     systemctl restart sshd
 fi
 
@@ -202,12 +220,16 @@ fi
 # ---------------------------------------------------------
 # 6. Установка R7-Office
 # ---------------------------------------------------------
-log "Установка R7-Office..."
-R7_PKG="$SRC_DIR/r7-office-2026.1.2-1942.p8.x86_64.rpm"
-if [ -f "$R7_PKG" ]; then
+log "Поиск и установка последней версии R7-Office..."
+
+# Ищем все rpm пакеты r7-office в директории
+R7_PKG=$(find_latest_rpm "r7-office-*.rpm" "$SRC_DIR")
+
+if [ -n "$R7_PKG" ] && [ -f "$R7_PKG" ]; then
+    log "Найден пакет: $(basename $R7_PKG)"
     apt-get install -y "$R7_PKG"
 else
-    error_exit "Пакет R7-Office не найден: $R7_PKG"
+    error_exit "Пакет R7-Office не найден в $SRC_DIR"
 fi
 
 # ---------------------------------------------------------
@@ -226,10 +248,12 @@ fi
 # ---------------------------------------------------------
 # 8. Kaspersky klnagent64
 # ---------------------------------------------------------
-log "Установка и настройка Kaspersky klnagent64..."
-KLN_PKG="$SRC_DIR/klnagent64-15.0.0-12912.x86_64.rpm"
+log "Поиск и установка последней версии Kaspersky klnagent64..."
 
-if [ -f "$KLN_PKG" ]; then
+KLN_PKG=$(find_latest_rpm "klnagent64-*.rpm" "$SRC_DIR")
+
+if [ -n "$KLN_PKG" ] && [ -f "$KLN_PKG" ]; then
+    log "Найден пакет: $(basename $KLN_PKG)"
     apt-get install -y "$KLN_PKG"
 
     # Запускаем пост-инсталляцию
@@ -238,7 +262,6 @@ if [ -f "$KLN_PKG" ]; then
     spawn /opt/kaspersky/klnagent64/lib/bin/setup/postinstall.pl
 
     # 1. Ждем немного, пока появится текст лицензии, и закрываем его (q)
-    # sleep 2 дает время на вывод текста в консоль
     sleep 5
     send "q\r"
 
@@ -246,7 +269,6 @@ if [ -f "$KLN_PKG" ]; then
     sleep 5
 
     # 2. Принимаем соглашение (Y)
-    # Обычно вопрос появляется сразу после закрытия текста
     send "Y\r"
 
     # 3. IP адрес сервера
@@ -273,7 +295,7 @@ if [ -f "$KLN_PKG" ]; then
 EOD
     log "Kaspersky Agent настроен"
 else
-    error_exit "Пакет Kaspersky не найден"
+    error_exit "Пакет Kaspersky klnagent64 не найден в $SRC_DIR"
 fi
 
 # ---------------------------------------------------------
@@ -295,7 +317,8 @@ if [ -d "$OPENSSH_SRC" ]; then
     chmod +x configure
     if [ -f "./ssh-keygen" ]; then chmod +x ssh-keygen; fi
 
-    ./configure --prefix=/usr --sysconfdir=/etc/openssh --with-pam --with-systemd
+    # Используем стандартный путь /etc/ssh
+    ./configure --prefix=/usr --sysconfdir=/etc/ssh --with-pam --with-systemd
 
     log "Компиляция..."
     make -j$(nproc)
@@ -306,18 +329,29 @@ if [ -d "$OPENSSH_SRC" ]; then
     log "Проверка версии:"
     ssh -V
 
+    # Создаем директорию если её нет
+    mkdir -p /etc/ssh
+
     # Применяем конфиг для НОВОЙ версии
-    NEW_SSHD_CONFIG="/etc/openssh/sshd_config"
-    if [ -f "$NEW_SSHD_CONFIG" ]; then
-        apply_ssh_config "$NEW_SSHD_CONFIG"
-        log "Конфигурация нового OpenSSH применена"
-    else
-        # Если файла нет нужно создать из примера
-        if [ -f "/etc/openssh/sshd_config.default" ]; then
-             cp /etc/openssh/sshd_config.default /etc/openssh/sshd_config
-             apply_ssh_config "/etc/openssh/sshd_config"
+    NEW_SSHD_CONFIG="/etc/ssh/sshd_config"
+
+    # Если конфига нет, создаем из примера
+    if [ ! -f "$NEW_SSHD_CONFIG" ]; then
+        if [ -f "/etc/ssh/sshd_config.default" ]; then
+            cp /etc/ssh/sshd_config.default "$NEW_SSHD_CONFIG"
+        elif [ -f "/etc/openssh/sshd_config.default" ]; then
+            cp /etc/openssh/sshd_config.default "$NEW_SSHD_CONFIG"
+        else
+            # Создаем минимальный конфиг
+            cat > "$NEW_SSHD_CONFIG" << 'EOF'
+# Generated by setup script
+Include /etc/ssh/sshd_config.d/*.conf
+EOF
         fi
     fi
+
+    apply_ssh_config "$NEW_SSHD_CONFIG"
+    log "Конфигурация нового OpenSSH применена в $NEW_SSHD_CONFIG"
 
     systemctl daemon-reload
     systemctl restart sshd
@@ -370,7 +404,59 @@ systemctl restart xrdp
 log "XRDP запущен"
 
 # ---------------------------------------------------------
-# 13. Перезагрузка
+# 13. Node Exporter
+# ---------------------------------------------------------
+log "Установка Prometheus Node Exporter..."
+
+NODE_EXPORTER_BIN="$SRC_DIR/node_exporter"
+
+if [ -f "$NODE_EXPORTER_BIN" ]; then
+    # Перемещаем бинарник
+    cp -f "$NODE_EXPORTER_BIN" /usr/bin/node_exporter
+    chmod +x /usr/bin/node_exporter
+
+    # Создаем пользователя
+    if ! id -u node_exporter >/dev/null 2>&1; then
+        useradd -rs /bin/false node_exporter
+        log "Пользователь node_exporter создан"
+    else
+        log "Пользователь node_exporter уже существует"
+    fi
+
+    # Меняем владельца
+    chown node_exporter:node_exporter /usr/bin/node_exporter
+
+    # Создаем systemd unit файл
+    cat > /etc/systemd/system/node_exporter.service << 'EOF'
+[Unit]
+Description=Prometheus Node Exporter
+After=network.target
+
+[Service]
+User=node_exporter
+Group=node_exporter
+Type=simple
+Restart=on-failure
+ExecStart=/usr/bin/node_exporter
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    log "Systemd unit файл создан"
+
+    # Перезагружаем systemd и запускаем сервис
+    systemctl daemon-reload
+    systemctl enable node_exporter
+    systemctl start node_exporter
+
+    log "Node Exporter установлен и запущен"
+else
+    error_exit "Бинарник node_exporter не найден: $NODE_EXPORTER_BIN"
+fi
+
+# ---------------------------------------------------------
+# 14. Перезагрузка
 # ---------------------------------------------------------
 log "========================================="
 log "НАСТРОЙКА ЗАВЕРШЕНА"
