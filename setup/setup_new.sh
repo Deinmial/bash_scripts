@@ -96,33 +96,72 @@ add_key_to_authorized() {
     local user=$1
     local key_file=$2
     local home_dir
+    local user_group
 
     if [ "$user" == "root" ]; then
         home_dir="/root"
     else
-        home_dir="/home/GOVIRK.RU/$user"
+        # Проверяем существование пользователя в системе
         if ! id -u "$user" >/dev/null 2>&1; then
-            log "WARNING: Пользователь $user не найден, ключи пропущены"
+            log "WARNING: Пользователь $user не найден в системе, ключи пропущены"
             return
+        fi
+
+        # Определяем домашнюю директорию из passwd
+        home_dir=$(getent passwd "$user" | cut -d: -f6)
+
+        # Если getent вернул пустоту или стандартный путь не подходит, используем статический путь
+        if [ -z "$home_dir" ] || [ "$home_dir" == "/nonexistent" ]; then
+            home_dir="/home/GOVIRK.RU/$user"
         fi
     fi
 
     local ssh_dir="$home_dir/.ssh"
     local auth_keys="$ssh_dir/authorized_keys"
 
+    # Получаем основную группу пользователя
+    user_group=$(id -gn "$user" 2>/dev/null)
+    if [ -z "$user_group" ]; then
+        user_group="$user"
+    fi
+
+    # ВАЖНО: Создаем домашнюю директорию, если её нет (для доменных пользователей)
+    if [ ! -d "$home_dir" ]; then
+        log "Создание домашней директории для $user: $home_dir"
+        mkdir -p "$home_dir"
+        chown "$user":"$user_group" "$home_dir"
+        chmod 755 "$home_dir"
+    fi
+
+    # Создаем .ssh
     mkdir -p "$ssh_dir"
     chmod 700 "$ssh_dir"
-    chown -R "$user":"$(id -gn $user)" "$ssh_dir"
+    chown "$user":"$user_group" "$ssh_dir"
 
     if [ -f "$key_file" ]; then
-        # Проверяем, нет ли уже такого ключа
-        if ! grep -qF "$(cat $key_file)" "$auth_keys" 2>/dev/null; then
-            cat "$key_file" >> "$auth_keys"
+        local key_content
+        key_content=$(cat "$key_file")
+
+        if [ -z "$key_content" ]; then
+            log "WARNING: Файл ключа $key_file пустой"
+            return
+        fi
+
+        # Создаем authorized_keys если нет
+        if [ ! -f "$auth_keys" ]; then
+            touch "$auth_keys"
             chmod 600 "$auth_keys"
-            chown "$user":"$(id -gn $user)" "$auth_keys"
-            log "Ключ для $user добавлен из $key_file"
-        else
+            chown "$user":"$user_group" "$auth_keys"
+        fi
+
+        # Проверяем дубликаты
+        if grep -qF "$key_content" "$auth_keys" 2>/dev/null; then
             log "Ключ для $user уже есть"
+        else
+            echo "$key_content" >> "$auth_keys"
+            chmod 600 "$auth_keys"
+            chown "$user":"$user_group" "$auth_keys"
+            log "Ключ для $user добавлен из $(basename $key_file)"
         fi
     else
         log "WARNING: Файл ключа $key_file не найден"
@@ -296,6 +335,83 @@ EOD
     log "Kaspersky Agent настроен"
 else
     error_exit "Пакет Kaspersky klnagent64 не найден в $SRC_DIR"
+fi
+
+# ---------------------------------------------------------
+# 8.1. Kaspersky Endpoint Security (KESL)
+# ---------------------------------------------------------
+log "Поиск и установка последней версии Kaspersky Endpoint Security (KESL)..."
+
+# Используем шаблон kesl-[0-9]*, чтобы случайно не захватить kesl-gui
+KESL_PKG=$(find_latest_rpm "kesl-[0-9]*.rpm" "$SRC_DIR")
+
+if [ -n "$KESL_PKG" ] && [ -f "$KESL_PKG" ]; then
+    log "Найден пакет: $(basename $KESL_PKG)"
+    apt-get install -y "$KESL_PKG"
+
+    log "Запуск автоматической настройки KESL (kesl-setup.pl)..."
+    /usr/bin/expect << 'EOD'
+    set timeout 120
+    spawn /opt/kaspersky/kesl/bin/kesl-setup.pl
+
+    # Последовательность действий хз чё требуют
+    expect "Light Agent mode"
+    send "\r"
+    sleep 5
+
+    expect "Response Agent mode"
+    send "\r"
+    sleep 5
+
+    expect "locales"
+    send "\r"
+    sleep 5
+
+    expect "License Agreement"
+    send "\r"
+    sleep 5
+
+    send "q\r"
+    sleep 5
+
+    expect "License Agreement"
+    send "y\r"
+    sleep 5
+
+    expect "Privacy Policy"
+    send "y\r"
+    sleep 5
+
+    expect "Kaspersky Security Network Statement"
+    send "y\r"
+    sleep 5
+
+    send "\r"
+    sleep 30
+
+    expect "updatable kernel"
+    send "\r"
+
+    expect eof
+EOD
+    log "Kaspersky Endpoint Security (KESL) успешно настроен"
+else
+    error_exit "Пакет KESL не найден в $SRC_DIR"
+fi
+
+# ---------------------------------------------------------
+# 8.2. Kaspersky Endpoint Security GUI (KESL-GUI)
+# ---------------------------------------------------------
+log "Поиск и установка Kaspersky Endpoint Security GUI..."
+
+KESL_GUI_PKG=$(find_latest_rpm "kesl-gui-*.rpm" "$SRC_DIR")
+
+if [ -n "$KESL_GUI_PKG" ] && [ -f "$KESL_GUI_PKG" ]; then
+    log "Найден пакет: $(basename $KESL_GUI_PKG)"
+    apt-get install -y "$KESL_GUI_PKG"
+    log "Kaspersky Endpoint Security GUI установлен"
+else
+    error_exit "Пакет KESL-GUI не найден в $SRC_DIR"
 fi
 
 # ---------------------------------------------------------
