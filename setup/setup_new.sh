@@ -584,6 +584,10 @@ BK_PKG=$(find_latest_rpm "SpravkiBk-*.rpm" "$SRC_DIR")
 if [ -n "$BK_PKG" ] && [ -f "$BK_PKG" ]; then
     log "Найден пакет: $(basename $BK_PKG)"
     apt-get install -y "$BK_PKG"
+
+    log "Установка прав для корректной работы"
+    chown root:root /opt/spravki-bk/chrome-sandbox
+    chmod 4755 /opt/spravki-bk/chrome-sandbox
 else
     error_exit "Пакет SpravkiBk не найден в $SRC_DIR"
 fi
