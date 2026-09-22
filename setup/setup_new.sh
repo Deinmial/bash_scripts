@@ -8,7 +8,7 @@
 # 4) klnagent64
 # 5) r7-office
 # Также убедиться, что настроена сеть, поставлен прокси и исключение для справок БК (127.0.0.1,localhost,::1)
-# После выполнения скрипта нужно поставить криптопро, настроить screensaver, импортировать сертификаты, поставить ПО для документооборта, настроить печать
+# После выполнения скрипта нужно поставить криптопро (драйвера), настроить screensaver, импортировать сертификаты, поставить ПО для документооборта, настроить печать
 
 set -e # Останавливать выполнение при ошибке
 
@@ -229,7 +229,7 @@ apt-repo add rpm http://10.3.2.135/own x86_64 own
 log "Обновление пакетной базы и установка зависимостей..."
 apt-get update -y
 # gcc, make и devel-пакеты нужны для сборки OpenSSH из исходников
-apt-get install -y libjansson4 expect newt52 gcc make zlib-devel openssl-devel pam-devel
+apt-get install -y libjansson4 p7zip expect newt52 gcc make zlib-devel openssl-devel pam-devel
 apt-get dist-upgrade -y
 
 # ---------------------------------------------------------
