@@ -65,7 +65,7 @@ done
 sed -i '13a\HTTP_PROXY=http://10.3.1.4:8080' "$NETWORK_CFG"
 sed -i '14a\HTTPS_PROXY=http://10.3.1.4:8080' "$NETWORK_CFG"
 sed -i '15a\FTP_PROXY=http://10.3.1.4:8080' "$NETWORK_CFG"
-sed -i '16a\NO_PROXY="10.3.2.135,10.*.*.*,172.16.*.*,172.17.*.*,vsp,*.govirk.ru,*.irkobl.ru,irkobl.ru,gossluzhba.gov.ru,*.gossluzhba.gov.ru,gz.gfu.ru,*.rts-tender.ru,rts-tender.ru, zakupki.gov.ru,*.zakupki.gov.ru,10.38.94.136,test.govirk.ru,127.0.0.1,localhost,::1,*.gfu.ru,sbi.sberbank.ru,ftls.sberbank.ru,auth.kontur.ru,check.kontur.ru,r38-extern.kontur.ru,pfr.kontur.ru,gosuslugi.ru,vks.minzdrav-irkutsk.ru,vks.irzs.ru,tls.gfu.ru,*.roskazna.local,*.ufk34.roskazna.local,ir.nalog.ru,gasu-office.roskazna.ru"' "$NETWORK_CFG"
+sed -i '16a\NO_PROXY="10.3.2.135,10.*.*.*,172.16.*.*,172.17.*.*,vsp,*.govirk.ru,*.irkobl.ru,irkobl.ru,gossluzhba.gov.ru,*.gossluzhba.gov.ru,gz.gfu.ru,*.rts-tender.ru,rts-tender.ru,10.38.94.136,test.govirk.ru,127.0.0.1,localhost,::1,*.gfu.ru,sbi.sberbank.ru,ftls.sberbank.ru,auth.kontur.ru,check.kontur.ru,r38-extern.kontur.ru,pfr.kontur.ru,gosuslugi.ru,vks.minzdrav-irkutsk.ru,vks.irzs.ru,tls.gfu.ru,*.roskazna.local,*.ufk34.roskazna.local,ir.nalog.ru,gasu-office.roskazna.ru"' "$NETWORK_CFG"
 
 log "Прокси настроены:"
 grep -E '^(HTTP_PROXY|HTTPS_PROXY|FTP_PROXY|NO_PROXY)=' "$NETWORK_CFG" || true
