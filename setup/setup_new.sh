@@ -1,7 +1,7 @@
 #!/bin/bash
 # Скрипт первоначальной настройки Alt Linux
 # Запускать от root
-# Перед запуском убедиться, что в SRC_DIR (ниже в коде есть переменаая) есть
+# Перед запуском убедиться, что в SRC_DIR (ниже в коде есть переменная) есть
 # 1) ssh ключи
 # 2) шрифт
 # 3) openssh
@@ -35,6 +35,66 @@ fi
 # Автоматическое определение пути к скрипту
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="$SCRIPT_DIR"
+
+# ---------------------------------------------------------
+# >>> ПРОКСИ И СЕРТИФИКАТЫ (добавлено)
+# ---------------------------------------------------------
+log "Настройка системных прокси в /etc/sysconfig/network..."
+
+NETWORK_CFG="/etc/sysconfig/network"
+
+# Резервная копия исходного файла
+if [ -f "$NETWORK_CFG" ] && [ ! -f "${NETWORK_CFG}.bak" ]; then
+    cp "$NETWORK_CFG" "${NETWORK_CFG}.bak"
+fi
+
+# Удаляем всё, начиная с 14-й строки (старые настройки прокси)
+if [ -f "$NETWORK_CFG" ]; then
+    sed -i '14,$d' "$NETWORK_CFG"
+else
+    touch "$NETWORK_CFG"
+fi
+
+# Гарантируем, что в файле есть хотя бы 13 строк (иначе sed '13a' не сработает)
+while [ "$(wc -l < "$NETWORK_CFG")" -lt 13 ]; do
+    echo "" >> "$NETWORK_CFG"
+done
+
+# Добавляем настройки прокси после 13-й строки
+# ВАЖНО: 10.3.2.135 добавлен в NO_PROXY, чтобы apt/wget к локальному зеркалу шли напрямую
+sed -i '13a\HTTP_PROXY=http://10.3.1.4:8080' "$NETWORK_CFG"
+sed -i '14a\HTTPS_PROXY=http://10.3.1.4:8080' "$NETWORK_CFG"
+sed -i '15a\FTP_PROXY=http://10.3.1.4:8080' "$NETWORK_CFG"
+sed -i '16a\NO_PROXY="10.3.2.135,10.*.*.*,172.16.*.*,172.17.*.*,vsp,*.govirk.ru,*.irkobl.ru,irkobl.ru,gossluzhba.gov.ru,*.gossluzhba.gov.ru,gz.gfu.ru,*.rts-tender.ru,rts-tender.ru, zakupki.gov.ru,*.zakupki.gov.ru, 10.38.94.136,test.govirk.ru,127.0.0.1,localhost,::1,*.gfu.ru,sbi.sberbank.ru,ftls.sberbank.ru,auth.kontur.ru,check.kontur.ru,r38-extern.kontur.ru,pfr.kontur.ru,gosuslugi.ru,vks.minzdrav-irkutsk.ru,vks.irzs.ru,tls.gfu.ru,*.roskazna.local,*.ufk34.roskazna.local,ir.nalog.ru, gasu-office.roskazna.ru"' "$NETWORK_CFG"
+
+log "Прокси настроены:"
+grep -E '^(HTTP_PROXY|HTTPS_PROXY|FTP_PROXY|NO_PROXY)=' "$NETWORK_CFG" || true
+
+# Экспортируем переменные в текущую сессию, чтобы apt и wget в этом же скрипте их видели
+export HTTP_PROXY="http://10.3.1.4:8080"
+export HTTPS_PROXY="http://10.3.1.4:8080"
+export FTP_PROXY="http://10.3.1.4:8080"
+export NO_PROXY="10.3.2.135,10.*.*.*,172.16.*.*,172.17.*.*,vsp,*.govirk.ru,*.irkobl.ru,irkobl.ru,gossluzhba.gov.ru,*.gossluzhba.gov.ru,gz.gfu.ru,*.rts-tender.ru,rts-tender.ru,zakupki.gov.ru,*.zakupki.gov.ru,10.38.94.136,test.govirk.ru,127.0.0.1,localhost,::1,*.gfu.ru,sbi.sberbank.ru,ftls.sberbank.ru,auth.kontur.ru,check.kontur.ru,r38-extern.kontur.ru,pfr.kontur.ru,gosuslugi.ru,vks.minzdrav-irkutsk.ru,vks.irzs.ru,tls.gfu.ru,*.roskazna.local,*.ufk34.roskazna.local,ir.nalog.ru,gasu-office.roskazna.ru"
+export http_proxy="$HTTP_PROXY"
+export https_proxy="$HTTPS_PROXY"
+export ftp_proxy="$FTP_PROXY"
+export no_proxy="$NO_PROXY"
+
+# Загрузка корневых сертификатов с локального сервера
+log "Загрузка корневых сертификатов с 10.3.2.135..."
+CA_DIR="/etc/pki/ca-trust/source/anchors"
+mkdir -p "$CA_DIR"
+
+wget -P "$CA_DIR" "http://10.3.2.135/certs//ideco_ca.crt"
+wget -P "$CA_DIR" "http://10.3.2.135/certs//utm.crt"
+
+log "Обновление хранилища доверенных сертификатов..."
+update-ca-trust
+
+log "Прокси и сертификаты настроены"
+# ---------------------------------------------------------
+# <<< КОНЕЦ БЛОКА ПРОКСИ И СЕРТИФИКАТОВ
+# ---------------------------------------------------------
 
 # ---------------------------------------------------------
 # НАСТРОЙКИ XRDP
